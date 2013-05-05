@@ -7,5 +7,7 @@ using namespace std;
 void birdMsgHandler(int inMsgSize, char *inMsg);
 void birdSendStartGameMsg (int destPort, int coord);
 void birdSendBirdPosnMsg (unsigned short int destPort, int birdPosn);
+void birdStartNewGame();
+void birdStartNewLaunch();
 #endif
 

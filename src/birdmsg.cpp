@@ -9,7 +9,10 @@
 
 #include "../inc/birdinc.h"
 
-static atomic<unsigned int> timeticks(0);
+static atomic<int> score(0);
+static atomic<int> launchCount(0);
+static atomic<int> gameCount(0);
+static atomic<bool> receivedEndLaunch(false);
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  getTwoBytes
@@ -118,6 +121,48 @@ void birdSendBirdPosnMsg (unsigned short int destPort, int birdPosn)
 
   return;
 }		/* -----  end of function birdSendBirdPosnMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleEndLaunchMsg
+ *  Description:  This is the response from the coordinator(s) saying that the
+ *                launch is completed. The bird can start another launch, or 
+ *                start a new game
+ * =============================================================================
+ */
+void handleEndLaunchMsg (char *inMsg, int inMsgSize)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X------ Score ------>
+  <--- Sole Coord ---->
+  */
+  int newScore = getTwoBytes(inMsg, inMsgSize);
+  score += newScore;
+  int soleCoord = getTwoBytes(inMsg, inMsgSize);
+  if (soleCoord == 1 || receivedEndLaunch == true) {
+    // This launch is over
+    receivedEndLaunch = false;
+    launchCount++;
+    if (launchCount == 10) {
+      // This game is over
+      launchCount = 0;
+      gameCount++;
+      cout<<"!!!The score is "<<score<<" after "<<gameCount<<" games"<<endl;
+      cout<<endl;
+      sleep(2);
+      birdStartNewGame();
+      return;
+    }
+    // Start off the next launch
+    cout<<"!!Current score "<<score<<endl<<endl;
+    sleep(2);
+    birdStartNewLaunch();
+  } else {
+    receivedEndLaunch = true;
+  }
+  return;
+}		/* -----  end of function handleEndLaunchMsg  ----- */
+
 /* ===  FUNCTION  ==============================================================
  *         Name:  birdMsgHandler
  *  Description:  This function accepts all the messages, finds out their type,
@@ -134,6 +179,10 @@ void birdMsgHandler (int inMsgSize, char *inMsg)
   short unsigned int msgType = getTwoBytes(inMsg, inMsgSize);;
 
   switch (msgType) {
+    case END_LAUNCH_MSG: {
+      handleEndLaunchMsg(inMsg, inMsgSize);
+      break;
+    }
     default: {
       cout<<"Invalid msg received at bird "<<msgType<<endl;
       break;

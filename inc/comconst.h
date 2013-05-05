@@ -5,6 +5,7 @@
 #define DB_LISTEN_PORT 11201
 #define COM_IP_ADDR "127.0.0.1"
 #define COORD_ALIVE_CHANCE 10
+#define PIG_NOTIFY_CHANCE 2
 #define MAX_POSN 5
 
 // Messages
@@ -19,7 +20,11 @@ enum MessageTypes {
   DB_REQ_MSG,
   DB_UPD_MSG,
   BIRD_POSN_MSG,
-  PIG_COORD_MSG
+  PIG_COORD_MSG,
+  STATUS_REQ_MSG,
+  STATUS_RESP_MSG,
+  BIRD_APPROACH_MSG,
+  END_LAUNCH_MSG
 };
 
 #endif

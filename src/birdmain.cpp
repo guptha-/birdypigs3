@@ -23,8 +23,9 @@ static mutex pigLock;
 void calculatePigPosns ()
 {
   pigLock.lock();
+  pigPosns.clear();
   for (int i = 0, n = pigPorts.size(); i < n; i++) {
-    pigPosns[i] = rand() % MAX_POSN + 1;
+    pigPosns.push_back(rand() % MAX_POSN + 1);
   }
   pigLock.unlock();
   return;
@@ -67,12 +68,26 @@ void determineCoordinators ()
 }		/* -----  end of function determineCoordinators  ----- */
 
 /* ===  FUNCTION  ==============================================================
+ *         Name:  birdStartNewLaunch
+ *  Description:  This function starts off a new bird launch
+ * =============================================================================
+ */
+void birdStartNewLaunch()
+{
+  int birdPosn = rand() % MAX_POSN;
+  birdSendBirdPosnMsg(coord[0], birdPosn);
+  birdSendBirdPosnMsg(coord[1], birdPosn);
+  return;
+}		/* -----  end of function birdStartNewLaunch  ----- */
+
+/* ===  FUNCTION  ==============================================================
  *         Name:  birdStartNewGame
  *  Description:  This function starts off a new game
  * =============================================================================
  */
-void birdStartNewGame ()
+void birdStartNewGame()
 {
+  sleep(1);
   cout<<"Bird: Starting new game"<<endl;
   calculatePigPosns();
   determineCoordinators();
@@ -81,13 +96,8 @@ void birdStartNewGame ()
   birdSendStartGameMsg (coord[0], coord[1]);
   birdSendStartGameMsg (coord[1], coord[0]);
   // Wait for the pigs to process the start game message
-  sleep (1);
-  for (int i = 0; i < 10; i++) {
-    int birdPosn = rand() % MAX_POSN;
-    birdSendBirdPosnMsg(coord[0], birdPosn);
-    birdSendBirdPosnMsg(coord[1], birdPosn);
-    sleep(1);
-  }
+  usleep (10000);
+  birdStartNewLaunch();
   pigLock.unlock();
   return;
 }		/* -----  end of function birdStartNewGame  ----- */
@@ -154,6 +164,26 @@ static int getPigPorts ()
 }   /* -----  end of function getPigPorts  ----- */
 
 /* ===  FUNCTION  ==============================================================
+ *         Name:  spawnDb
+ * =============================================================================
+ */
+void spawnDb ()
+{
+  int child = fork();
+  if (child < 0) {
+    cout<<"Problem spawning db!"<<endl;
+    return;
+  } else if (child == 0) {
+    // Child address space
+    execl ("./bin/db", "db", NULL);
+    cout<<"Problem spawning child"<<endl;
+    cout<<errno;
+    exit(0);
+  }
+  return;
+}		/* -----  end of function spawnDb  ----- */
+
+/* ===  FUNCTION  ==============================================================
  *         Name:  spawnPigs
  * =============================================================================
  */ 
@@ -216,6 +246,7 @@ int main (int argc, char **argv)
   if (EXIT_FAILURE == spawnPigs ()) {
     return EXIT_FAILURE;
   }
+  spawnDb();
 
   birdStartNewGame();
   handlerThread.join();

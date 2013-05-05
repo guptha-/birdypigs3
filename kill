@@ -1,0 +1,2 @@
+killall -9 bird
+killall -9 pig

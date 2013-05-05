@@ -66,8 +66,10 @@ void sendDbResponseMsg (int destPort, const vector<short unsigned int> &port,
   /*
   |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
   <----- Msg Type ----X------ Count ------>
-  <------- Posn ------X------ Status ----- ...
+  <------- Port ------X------- Posn ------>
+  <------ Status ----- ...
   */
+  cout<<"Sending db resp msg"<<endl;
   char msg[MAX_MSG_SIZE];
   char *outMsg = msg;
   memset(outMsg, 0, MAX_MSG_SIZE);
@@ -100,21 +102,20 @@ void handleDbUpdMsg (int inMsgSize, char *inMsg)
 {
   /*
   |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
-  <----- Msg Type ----X------ Count ------>
-  <------- Port 1 ----X------ Posn 1 ----->
-  <----- Status 1----- ... 
+  <----- Msg Type ----X------- Port ------>
+  <------- Posn ------X----- Status ------> 
   */
 
-  unsigned short int count = getTwoBytes(inMsg, inMsgSize);
   ValueStruct val;
-  while (count--) {
-    unsigned short int port = getTwoBytes(inMsg, inMsgSize);
-    val.posn = getTwoBytes(inMsg, inMsgSize);
-    unsigned short int status = getTwoBytes(inMsg, inMsgSize);
-    val.live = (status == 1) ? true : false;
-
-    dbSetElement (port, val);
+  unsigned short int port = getTwoBytes(inMsg, inMsgSize);
+  val.posn = getTwoBytes(inMsg, inMsgSize);
+  unsigned short int status = getTwoBytes(inMsg, inMsgSize);
+  if (status == 0) {
+    cout<<"Killed one at the db: "<<port<<endl;
   }
+  val.live = (status == 1) ? true : false;
+
+  dbSetElement (port, val);
   return;
 }		/* -----  end of function handleDbUpdMsg  ----- */
 
@@ -143,9 +144,14 @@ void handleDbRequestMsg (int inMsgSize, char *inMsg)
   vector<short unsigned int> posn;
   vector<bool> status;
   for (int i = 0, n = ports.size(); i < n; i++) {
-    dbGetElement (ports[i], value);
+    if (dbGetElement (ports[i], value) == false) {
+      cout<<"Cannot find "<<ports[i]<<" at the db"<<endl;
+    }
     posn.push_back(value.posn);
     status.push_back(value.live);
+    if(value.live == false) {
+      cout<<"Retrievng a dead one from the db: "<<ports[i];
+    }
   }
 
   sendDbResponseMsg (destPort, ports, posn, status);

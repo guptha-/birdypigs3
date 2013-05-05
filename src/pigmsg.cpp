@@ -9,6 +9,8 @@
 #include "../inc/piginc.h"
 
 static atomic<int> birdPosn(0);
+static atomic<int> sentCount(0);
+static atomic<int> score(0);
 static atomic<unsigned short int> otherCoordPort(0);
 static atomic<bool> receivedOtherCoordMsg(false);
 static atomic<bool> receivedBirdPosnMsg(false);
@@ -16,7 +18,8 @@ static atomic<bool> otherCoordAlive(false);
 static atomic<bool> otherCoordPrevAlive;
 static atomic<bool> ownCoordPrevAlive;
 static atomic<bool> ownCoordAlive(false);
-static mutex coordLock;;
+static atomic<bool> isHit(false);
+static mutex coordLock;
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  getTwoBytes
@@ -65,6 +68,134 @@ void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
 }   /* -----  end of function sendMsg  ----- */
 
 /* ===  FUNCTION  ==============================================================
+ *         Name:  isAffected
+ *  Description:  Checks if we are affected by the bird and indicates the 
+ *                position we should move to if true
+ * =============================================================================
+ */
+bool isAffected (int &posn) {
+  if (posn == birdPosn) {
+    // We are affected
+    if (posn == MAX_POSN) {
+      posn--;
+    } else {
+      posn++;
+    }
+    return true;
+  }
+  return false;
+}		/* -----  end of function isAffected  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleFromCoordBirdApproachMsg
+ *  Description:  This receives the bird approaching msg from the coordinator
+ * =============================================================================
+ */
+void handleFromCoordBirdApproachMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Bird Posn --->
+  */
+  unsigned short int bPosn = getTwoBytes(inMsg, inMsgSize);
+  birdPosn = bPosn;
+
+  isHit = false;
+  int posn = ownNode.posn;
+  if (isAffected(posn)) {
+    ownNode.posn = posn;
+    if (rand() % PIG_NOTIFY_CHANCE == 1) {
+      // We will not have received this msg in time
+      isHit = true;
+    }
+  }
+  return;
+}		/* -----  end of function handleFromCoordBirdApproachMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendToPigBirdApproachMsg
+ *  Description:  This indicates to the affected pigs that the bird is 
+ *                approaching
+ * =============================================================================
+ */
+void sendToPigBirdApproachMsg (int destPort, int posn)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X----- Bird Posn --->
+  */
+  char msg[MAX_MSG_SIZE];
+  char *outMsg = msg;
+  memset(outMsg, 0, MAX_MSG_SIZE);
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  addTwoBytes(outMsg, outMsgSize, BIRD_APPROACH_MSG);
+  addTwoBytes(outMsg, outMsgSize, posn);
+
+  sendMsg(permOutMsg, outMsgSize, destPort);
+  return;
+}		/* -----  end of function sendToPigBirdApproachMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendStatusReqMsg
+ *  Description:  It sends a request to the database to fill in the missing gaps
+ * =============================================================================
+ */
+void sendStatusReqMsg (int port)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X--- Coord Port  --->
+  */
+  char msg[MAX_MSG_SIZE];
+  char *outMsg = msg;
+  memset(outMsg, 0, MAX_MSG_SIZE);
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  addTwoBytes(outMsg, outMsgSize, STATUS_REQ_MSG);
+  addTwoBytes(outMsg, outMsgSize, ownNode.port);
+
+  sendMsg(permOutMsg, outMsgSize, port);
+  return;
+}		/* -----  end of function sendStatusReqMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendEndLaunchToBird
+ * =============================================================================
+ */
+void sendEndLaunchToBird ()
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X------ Score ------>
+  <--- Sole Coord ---->
+  */
+
+  char msg[MAX_MSG_SIZE];
+  char *outMsg = msg;
+  memset(outMsg, 0, MAX_MSG_SIZE);
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  addTwoBytes(outMsg, outMsgSize, END_LAUNCH_MSG);
+  cout<<"At the coord, score "<<score<<endl;
+  addTwoBytes(outMsg, outMsgSize, score);
+  int soleCoord;
+  if (otherCoordAlive == false) {
+    soleCoord = 1;
+  } else {
+    soleCoord = 0;
+  }
+  addTwoBytes(outMsg, outMsgSize, soleCoord);
+
+  sendMsg(permOutMsg, outMsgSize, BIRD_LISTEN_PORT);
+
+  return;
+}		/* -----  end of function sendEndLaunchToBird  ----- */
+
+/* ===  FUNCTION  ==============================================================
  *         Name:  handlePigs
  *  Description:  Once the status of the other coordinator is known, the bird
  *                posn message is sent out to the other pigs
@@ -72,7 +203,38 @@ void sendMsg(char *outMsg, int outMsgSize, unsigned short int destPort)
  */
 void handlePigs ()
 {
-  // TODO
+  cout<<ownNode.port<<": handle pigs"<<endl;
+  otherVectorLock.lock();
+  for (int i = 0, n = otherVector.size(); i < n; i++) {
+    if (((otherVector[i].port % 2 == ownNode.port % 2) ||
+         (otherCoordAlive == false)) &&
+        (otherVector[i].live == true)) /* No point informing dead ones */{
+      sendToPigBirdApproachMsg(otherVector[i].port, birdPosn);
+    }
+  }
+  otherVectorLock.unlock();
+  if (ownNode.live == true) {
+    sendToPigBirdApproachMsg(ownNode.port, birdPosn);
+  }
+  usleep(10000);
+  for (int i = 0, n = otherVector.size(); i < n; i++) {
+    if (((otherVector[i].port % 2 == ownNode.port % 2) ||
+         (otherCoordAlive == false)) &&
+        (otherVector[i].live == true)) /* No point informing dead ones */{
+      sentCount++;
+      sendStatusReqMsg(otherVector[i].port);
+    }
+  }
+  otherVectorLock.unlock();
+  if (ownNode.live == true) {
+    sendStatusReqMsg(ownNode.port);
+    sentCount++;
+  }
+  if (sentCount == 0) {
+    // All pigs are already dead
+    cout<<"Sent end launch to bird"<<endl;
+    sendEndLaunchToBird();
+  }
   return;
 }		/* -----  end of function handlePigs  ----- */
 
@@ -88,6 +250,7 @@ void sendDbRequestMsg ()
   <----- Msg Type ----X---- Dest Port  --->
   <----- Count -------X----- Port ------ .... 
   */
+  cout<<ownNode.port<<": Sending db req msg"<<endl;
   char msg[MAX_MSG_SIZE];
   char *outMsg = msg;
   memset(outMsg, 0, MAX_MSG_SIZE);
@@ -95,7 +258,24 @@ void sendDbRequestMsg ()
   int outMsgSize = 0;
 
   addTwoBytes(outMsg, outMsgSize, DB_REQ_MSG);
-// TODO
+  addTwoBytes(outMsg, outMsgSize, ownNode.port);
+
+  char *countPtr = outMsg;
+  outMsg += 2;
+  int count = 0;
+
+  otherVectorLock.lock();
+  for (int i = 0, n = otherVector.size(); i < n; i++) {
+    if (otherVector[i].port % 2 != ownNode.port % 2) {
+      // We were not originally responsible for them. The other coord also is
+      // included in this
+      addTwoBytes(outMsg, outMsgSize, otherVector[i].port);
+    }
+  }
+  otherVectorLock.unlock();
+  addTwoBytes(countPtr, outMsgSize, count);
+
+  sendMsg(permOutMsg, outMsgSize, DB_LISTEN_PORT);
   return;
 }		/* -----  end of function sendDbRequestMsg  ----- */
 
@@ -110,6 +290,7 @@ void sendPigCoordMsg (bool areWeAlive)
   |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
   <----- Msg Type ----X------ Status ----->
   */
+  cout<<ownNode.port<<": sending pig coord msg"<<endl;
   char msg[MAX_MSG_SIZE];
   char *outMsg = msg;
   memset(outMsg, 0, MAX_MSG_SIZE);
@@ -124,6 +305,133 @@ void sendPigCoordMsg (bool areWeAlive)
 
   return;
 }		/* -----  end of function sendPigCoordMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendStatusRespMsg
+ * =============================================================================
+ */
+void sendStatusRespMsg (int coordPort)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X------- Port ------>
+  <------- Posn ------X------ Status ----->
+  */
+
+  char msg[MAX_MSG_SIZE];
+  char *outMsg = msg;
+  memset(outMsg, 0, MAX_MSG_SIZE);
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  addTwoBytes(outMsg, outMsgSize, STATUS_RESP_MSG);
+  int port = ownNode.port;
+  addTwoBytes(outMsg, outMsgSize, port);
+  int posn = ownNode.posn;
+  addTwoBytes(outMsg, outMsgSize, posn);
+  int status = (isHit == true) ? 0 : 1;
+  addTwoBytes(outMsg, outMsgSize, status);
+
+  sendMsg(permOutMsg, outMsgSize, coordPort);
+
+  return;
+}		/* -----  end of function sendStatusRespMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleStatusRespMsg
+ * =============================================================================
+ */
+void handleStatusRespMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X------- Port ------>
+  <------- Posn ------X------ Status ----->
+  */
+
+  char *outMsg = inMsg - 2;
+  char *permOutMsg = outMsg;
+  int outMsgSize = inMsgSize;
+  // Updating database here
+  addTwoBytes(outMsg, outMsgSize, DB_UPD_MSG);
+
+  unsigned short int port = getTwoBytes(inMsg, inMsgSize);
+      cout<<"Getting status resp from "<<port<<endl;
+  int posn = getTwoBytes(inMsg, inMsgSize);
+  int status = getTwoBytes(inMsg, inMsgSize);
+  bool live = (status == 1) ? true : false;
+  if (live == false) {
+    sendMsg(permOutMsg, outMsgSize, DB_LISTEN_PORT);
+    score++;
+  }
+  if (port == ownNode.port) {
+    ownNode.posn = posn;
+    ownNode.live = live;
+  } else {
+    otherVectorLock.lock();
+    for (int i = 0, n = otherVector.size(); i < n; i++) {
+      if (otherVector[i].port == port) {
+        otherVector[i].posn = posn;
+        otherVector[i].live = live;
+      }
+    }
+    otherVectorLock.unlock();
+  }
+
+  sentCount--;
+  if (sentCount == 0) {
+    // All responses have been received
+    cout<<"Sent end launch to bird"<<endl;
+    sendEndLaunchToBird();
+    score = 0;
+  }
+  return;
+}		/* -----  end of function handleStatusRespMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleStatusReqMsg
+ *  Description:  The start of the game is indicated here. We know here whether
+ *                we are a coordinator, and also all the pig positions
+ * =============================================================================
+ */
+void handleStatusReqMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X--- Coord Port  --->
+  */
+
+  int coordPort = getTwoBytes(inMsg, inMsgSize);
+  sendStatusRespMsg(coordPort);
+}		/* -----  end of function handleStatusReqMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  sendDbUpdMsg
+ *  Description:  Sends an update to the database
+ * =============================================================================
+ */
+void sendDbUpdMsg (int port, int posn, int status)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X------- Port ------>
+  <------- Posn ------X----- Status ------> 
+  */
+  char msg[MAX_MSG_SIZE];
+  char *outMsg = msg;
+  memset(outMsg, 0, MAX_MSG_SIZE);
+  char *permOutMsg = outMsg;
+  int outMsgSize = 0;
+
+  addTwoBytes(outMsg, outMsgSize, DB_UPD_MSG);
+  addTwoBytes(outMsg, outMsgSize, port);
+  addTwoBytes(outMsg, outMsgSize, posn);
+  addTwoBytes(outMsg, outMsgSize, status);
+
+  sendMsg(permOutMsg, outMsgSize, DB_LISTEN_PORT);
+
+  return;
+}		/* -----  end of function sendDbUpdMsg  ----- */
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  handleStartGameMsg
@@ -142,6 +450,7 @@ void handleStartGameMsg (int inMsgSize, char *inMsg)
 
   // Since we received this message, we are a coordinator
 
+  cout<<"Received start game msg"<<endl;
   otherCoordPort = getTwoBytes(inMsg, inMsgSize);
   unsigned int count = getTwoBytes(inMsg, inMsgSize);
 
@@ -160,6 +469,7 @@ void handleStartGameMsg (int inMsgSize, char *inMsg)
         }
       }
     }
+    sendDbUpdMsg(port, posn, 1);
   }
   otherVectorLock.unlock();
   ownCoordPrevAlive = true;
@@ -181,21 +491,33 @@ void handleBirdPosnMsg (int inMsgSize, char *inMsg)
   */
   coordLock.lock();
   unsigned short int posn = getTwoBytes(inMsg, inMsgSize);
+  cout<<ownNode.port<<": received bird posn msg "<<posn<<endl;
   birdPosn = posn;
 
   if (ownCoordPrevAlive == false) {
     // We are already dead. Ignore
+    coordLock.unlock();
     return;
   }
 
   receivedBirdPosnMsg = true;
   ownCoordAlive =  (rand() % COORD_ALIVE_CHANCE == 0) ? false : true;
+  if (ownCoordAlive == false) {
+    cout<<ownNode.port<<": we are dead"<<endl;
+  } else{
+    cout<<ownNode.port<<": we are alive"<<endl;
+  }
 
-  if (receivedOtherCoordMsg == true) {
+  if (otherCoordPrevAlive == false || receivedOtherCoordMsg == true) {
     // The other coord has already made a decision
+    if (otherCoordPrevAlive == false) {
+      otherCoordAlive = false;
+    }
     if ((otherCoordAlive == false) && (ownCoordAlive == false)) {
       // If we have also decided to die, we need to tie break
-      if (ownNode.port > otherCoordPort) {
+      cout<<"Both are dead"<<endl;
+      if (otherCoordPrevAlive == false || ownNode.port > otherCoordPort) {
+        // If the other coord had previously been dead, we can't die
         ownCoordAlive = true;
       } else {
         otherCoordAlive = true;
@@ -205,23 +527,75 @@ void handleBirdPosnMsg (int inMsgSize, char *inMsg)
       // We need to get the other coord's subordinate ports' info
       sendDbRequestMsg();
     }
+    if (otherCoordPrevAlive == true) {
+      sendPigCoordMsg(ownCoordAlive);
+    }
     bool temp = otherCoordAlive;
     otherCoordPrevAlive = temp;
     temp = ownCoordAlive;
     ownCoordPrevAlive = temp;
     receivedOtherCoordMsg = false;
     receivedBirdPosnMsg = false;
-    sendPigCoordMsg(ownCoordAlive);
     coordLock.unlock();
     if (ownCoordAlive == true) {
       handlePigs();
     }
   } else {
-    sendPigCoordMsg(ownCoordAlive);
+    if (otherCoordPrevAlive == true) {
+      sendPigCoordMsg(ownCoordAlive);
+    }
     coordLock.unlock();
   }
   return;
 }		/* -----  end of function handleBirdPosnMsg  ----- */
+
+/* ===  FUNCTION  ==============================================================
+ *         Name:  handleDbRespMsg
+ *  Description:  Receives other coordinator's status
+ * =============================================================================
+ */
+void handleDbRespMsg (int inMsgSize, char *inMsg)
+{
+  /*
+  |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
+  <----- Msg Type ----X------ Count ------>
+  <------- Port ------X------- Posn ------>
+  <------ Status ----- ...
+  */
+
+  unsigned short int count = getTwoBytes(inMsg, inMsgSize);
+  while (count--) {
+    unsigned short int port = getTwoBytes(inMsg, inMsgSize);
+    unsigned short int posn = getTwoBytes(inMsg, inMsgSize);
+    unsigned short int status = getTwoBytes(inMsg, inMsgSize);
+    bool live = (status == 1) ? true : false;
+
+    otherVectorLock.lock();
+    for (int i = 0, n = otherVector.size(); i < n; i++) {
+      if (port == otherVector[i].port) {
+        if (live == false) {
+          cout<<"Got back a dead one from the db: "<<port<<endl;
+        }
+        otherVector[i].posn = posn;
+        otherVector[i].live = live;
+        break;
+      }
+    }
+    otherVectorLock.unlock();
+  }
+
+  bool temp = otherCoordAlive;
+  otherCoordPrevAlive = temp;
+  temp = ownCoordAlive;
+  ownCoordPrevAlive = temp;
+  receivedOtherCoordMsg = false;
+  receivedBirdPosnMsg = false;
+  coordLock.unlock();
+  if (ownCoordAlive == true) {
+    handlePigs();
+  }
+  return;
+}		/* -----  end of function handleDbRespMsg  ----- */
 
 /* ===  FUNCTION  ==============================================================
  *         Name:  handlePigCoordMsg
@@ -234,6 +608,7 @@ void handlePigCoordMsg (int inMsgSize, char *inMsg)
   |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
   <----- Msg Type ----X------ Status ----->
   */
+  cout<<ownNode.port<<": received pig coord msg"<<endl;
   coordLock.lock();
   unsigned short int status = getTwoBytes(inMsg, inMsgSize);
   receivedOtherCoordMsg = true;
@@ -246,6 +621,7 @@ void handlePigCoordMsg (int inMsgSize, char *inMsg)
     // We have already made our decision
     if ((otherCoordAlive == false) && (ownCoordAlive == false)) {
       // If we have also decided to die, we need to tie break
+      cout<<"Both are dead coordmsg"<<endl;
       if (ownNode.port > otherCoordPort) {
         ownCoordAlive = true;
       } else {
@@ -255,6 +631,7 @@ void handlePigCoordMsg (int inMsgSize, char *inMsg)
     if (otherCoordPrevAlive == true && otherCoordAlive == false) {
       // We need to get the other coord's subordinate ports' info
       sendDbRequestMsg();
+      return;
     }
     bool temp = otherCoordAlive;
     otherCoordPrevAlive = temp;
@@ -300,9 +677,25 @@ void pigMsgHandler (int inMsgSize, char *inMsg)
       handlePigCoordMsg (inMsgSize, inMsg);
       break;
     }
+    case STATUS_REQ_MSG: {
+      handleStatusReqMsg (inMsgSize, inMsg);
+      break;
+    }
+    case STATUS_RESP_MSG: {
+      handleStatusRespMsg (inMsgSize, inMsg);
+      break;
+    }
+    case BIRD_APPROACH_MSG: {
+      handleFromCoordBirdApproachMsg (inMsgSize, inMsg);
+      break;
+    }
+    case DB_RESP_MSG: {
+      handleDbRespMsg (inMsgSize, inMsg);
+      break;
+    }
     default:
     {
-      cout<<"Invalid msg received at pig "<<ownNode.port<<endl;
+      cout<<"Invalid msg "<<msgType<<" received at pig "<<ownNode.port<<endl;
       break;
     }
   }

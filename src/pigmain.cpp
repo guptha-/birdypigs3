@@ -55,6 +55,7 @@ int main (int argc, char *argv[])
   }
 
   ownNode.port = atoi(argv[1]);
+  srand(time(NULL) * ownNode.port);
   otherVectorLock.lock();
 
   for (int iter = 2; iter < argc; iter++) {
@@ -63,6 +64,7 @@ int main (int argc, char *argv[])
     otherNode.posn = 0;
     otherVector.push_back(otherNode);
   }
+  otherVectorLock.unlock();
 
   // Listen on incoming port for messages
   thread handlerThread(listenerFlow);
