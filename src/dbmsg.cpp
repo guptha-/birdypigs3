@@ -69,7 +69,6 @@ void sendDbResponseMsg (int destPort, const vector<short unsigned int> &port,
   <------- Port ------X------- Posn ------>
   <------ Status ----- ...
   */
-  cout<<"Sending db resp msg"<<endl;
   char msg[MAX_MSG_SIZE];
   char *outMsg = msg;
   memset(outMsg, 0, MAX_MSG_SIZE);
@@ -77,7 +76,8 @@ void sendDbResponseMsg (int destPort, const vector<short unsigned int> &port,
   int outMsgSize = 0;
 
   addTwoBytes(outMsg, outMsgSize, DB_RESP_MSG);
-  short unsigned int field;
+  short unsigned int field = port.size();
+  addTwoBytes(outMsg, outMsgSize, field);
   for (int i = 0, n = port.size(); i < n; i++) {
     field = port[i];
     addTwoBytes(outMsg, outMsgSize, field);
@@ -110,9 +110,6 @@ void handleDbUpdMsg (int inMsgSize, char *inMsg)
   unsigned short int port = getTwoBytes(inMsg, inMsgSize);
   val.posn = getTwoBytes(inMsg, inMsgSize);
   unsigned short int status = getTwoBytes(inMsg, inMsgSize);
-  if (status == 0) {
-    cout<<"Killed one at the db: "<<port<<endl;
-  }
   val.live = (status == 1) ? true : false;
 
   dbSetElement (port, val);
@@ -149,9 +146,6 @@ void handleDbRequestMsg (int inMsgSize, char *inMsg)
     }
     posn.push_back(value.posn);
     status.push_back(value.live);
-    if(value.live == false) {
-      cout<<"Retrievng a dead one from the db: "<<ports[i];
-    }
   }
 
   sendDbResponseMsg (destPort, ports, posn, status);

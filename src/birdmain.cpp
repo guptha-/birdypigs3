@@ -74,7 +74,8 @@ void determineCoordinators ()
  */
 void birdStartNewLaunch()
 {
-  int birdPosn = rand() % MAX_POSN;
+  int birdPosn = rand() % MAX_POSN + 1;
+  cout<<"The bird posn is "<<birdPosn<<endl;
   birdSendBirdPosnMsg(coord[0], birdPosn);
   birdSendBirdPosnMsg(coord[1], birdPosn);
   return;
@@ -87,7 +88,7 @@ void birdStartNewLaunch()
  */
 void birdStartNewGame()
 {
-  sleep(1);
+  usleep(1000000);
   cout<<"Bird: Starting new game"<<endl;
   calculatePigPosns();
   determineCoordinators();

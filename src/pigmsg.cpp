@@ -103,9 +103,11 @@ void handleFromCoordBirdApproachMsg (int inMsgSize, char *inMsg)
   isHit = false;
   int posn = ownNode.posn;
   if (isAffected(posn)) {
+    cout<<ownNode.port<<": We are targeted at "<<ownNode.posn<<endl;
     ownNode.posn = posn;
     if (rand() % PIG_NOTIFY_CHANCE == 1) {
       // We will not have received this msg in time
+      cout<<ownNode.port<<": We are hit"<<endl;
       isHit = true;
     }
   }
@@ -180,7 +182,6 @@ void sendEndLaunchToBird ()
   int outMsgSize = 0;
 
   addTwoBytes(outMsg, outMsgSize, END_LAUNCH_MSG);
-  cout<<"At the coord, score "<<score<<endl;
   addTwoBytes(outMsg, outMsgSize, score);
   int soleCoord;
   if (otherCoordAlive == false) {
@@ -203,7 +204,6 @@ void sendEndLaunchToBird ()
  */
 void handlePigs ()
 {
-  cout<<ownNode.port<<": handle pigs"<<endl;
   otherVectorLock.lock();
   for (int i = 0, n = otherVector.size(); i < n; i++) {
     if (((otherVector[i].port % 2 == ownNode.port % 2) ||
@@ -250,7 +250,6 @@ void sendDbRequestMsg ()
   <----- Msg Type ----X---- Dest Port  --->
   <----- Count -------X----- Port ------ .... 
   */
-  cout<<ownNode.port<<": Sending db req msg"<<endl;
   char msg[MAX_MSG_SIZE];
   char *outMsg = msg;
   memset(outMsg, 0, MAX_MSG_SIZE);
@@ -270,6 +269,7 @@ void sendDbRequestMsg ()
       // We were not originally responsible for them. The other coord also is
       // included in this
       addTwoBytes(outMsg, outMsgSize, otherVector[i].port);
+      count++;
     }
   }
   otherVectorLock.unlock();
@@ -290,7 +290,6 @@ void sendPigCoordMsg (bool areWeAlive)
   |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
   <----- Msg Type ----X------ Status ----->
   */
-  cout<<ownNode.port<<": sending pig coord msg"<<endl;
   char msg[MAX_MSG_SIZE];
   char *outMsg = msg;
   memset(outMsg, 0, MAX_MSG_SIZE);
@@ -354,14 +353,13 @@ void handleStatusRespMsg (int inMsgSize, char *inMsg)
   int outMsgSize = inMsgSize;
   // Updating database here
   addTwoBytes(outMsg, outMsgSize, DB_UPD_MSG);
+  sendMsg(permOutMsg, outMsgSize, DB_LISTEN_PORT);
 
   unsigned short int port = getTwoBytes(inMsg, inMsgSize);
-      cout<<"Getting status resp from "<<port<<endl;
   int posn = getTwoBytes(inMsg, inMsgSize);
   int status = getTwoBytes(inMsg, inMsgSize);
   bool live = (status == 1) ? true : false;
   if (live == false) {
-    sendMsg(permOutMsg, outMsgSize, DB_LISTEN_PORT);
     score++;
   }
   if (port == ownNode.port) {
@@ -491,7 +489,6 @@ void handleBirdPosnMsg (int inMsgSize, char *inMsg)
   */
   coordLock.lock();
   unsigned short int posn = getTwoBytes(inMsg, inMsgSize);
-  cout<<ownNode.port<<": received bird posn msg "<<posn<<endl;
   birdPosn = posn;
 
   if (ownCoordPrevAlive == false) {
@@ -504,8 +501,6 @@ void handleBirdPosnMsg (int inMsgSize, char *inMsg)
   ownCoordAlive =  (rand() % COORD_ALIVE_CHANCE == 0) ? false : true;
   if (ownCoordAlive == false) {
     cout<<ownNode.port<<": we are dead"<<endl;
-  } else{
-    cout<<ownNode.port<<": we are alive"<<endl;
   }
 
   if (otherCoordPrevAlive == false || receivedOtherCoordMsg == true) {
@@ -515,9 +510,9 @@ void handleBirdPosnMsg (int inMsgSize, char *inMsg)
     }
     if ((otherCoordAlive == false) && (ownCoordAlive == false)) {
       // If we have also decided to die, we need to tie break
-      cout<<"Both are dead"<<endl;
       if (otherCoordPrevAlive == false || ownNode.port > otherCoordPort) {
         // If the other coord had previously been dead, we can't die
+        cout<<ownNode.port<<": Both are dead, we will stay alive"<<endl;
         ownCoordAlive = true;
       } else {
         otherCoordAlive = true;
@@ -563,6 +558,7 @@ void handleDbRespMsg (int inMsgSize, char *inMsg)
   <------ Status ----- ...
   */
 
+  cout<<ownNode.port<<": Got DB resp msg"<<endl;
   unsigned short int count = getTwoBytes(inMsg, inMsgSize);
   while (count--) {
     unsigned short int port = getTwoBytes(inMsg, inMsgSize);
@@ -574,7 +570,7 @@ void handleDbRespMsg (int inMsgSize, char *inMsg)
     for (int i = 0, n = otherVector.size(); i < n; i++) {
       if (port == otherVector[i].port) {
         if (live == false) {
-          cout<<"Got back a dead one from the db: "<<port<<endl;
+          cout<<"Received dead pig from the db: "<<port<<endl;
         }
         otherVector[i].posn = posn;
         otherVector[i].live = live;
@@ -584,6 +580,7 @@ void handleDbRespMsg (int inMsgSize, char *inMsg)
     otherVectorLock.unlock();
   }
 
+  coordLock.lock();
   bool temp = otherCoordAlive;
   otherCoordPrevAlive = temp;
   temp = ownCoordAlive;
@@ -608,7 +605,7 @@ void handlePigCoordMsg (int inMsgSize, char *inMsg)
   |--- 1 ---|--- 2 ---|--- 3 ---|--- 4 ---|
   <----- Msg Type ----X------ Status ----->
   */
-  cout<<ownNode.port<<": received pig coord msg"<<endl;
+  cout<<ownNode.port<<": Received pig coord msg"<<endl;
   coordLock.lock();
   unsigned short int status = getTwoBytes(inMsg, inMsgSize);
   receivedOtherCoordMsg = true;
@@ -631,6 +628,7 @@ void handlePigCoordMsg (int inMsgSize, char *inMsg)
     if (otherCoordPrevAlive == true && otherCoordAlive == false) {
       // We need to get the other coord's subordinate ports' info
       sendDbRequestMsg();
+      coordLock.unlock();
       return;
     }
     bool temp = otherCoordAlive;

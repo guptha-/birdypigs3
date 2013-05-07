@@ -149,13 +149,13 @@ void handleEndLaunchMsg (char *inMsg, int inMsgSize)
       gameCount++;
       cout<<"!!!The score is "<<score<<" after "<<gameCount<<" games"<<endl;
       cout<<endl;
-      sleep(2);
+      usleep(20000);
       birdStartNewGame();
       return;
     }
     // Start off the next launch
     cout<<"!!Current score "<<score<<endl<<endl;
-    sleep(2);
+    usleep(20000);
     birdStartNewLaunch();
   } else {
     receivedEndLaunch = true;
