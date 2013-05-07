@@ -1,2 +1,3 @@
 killall -9 bird
 killall -9 pig
+killall -9 db
