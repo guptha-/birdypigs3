@@ -88,7 +88,7 @@ void birdStartNewLaunch()
  */
 void birdStartNewGame()
 {
-  usleep(1000000);
+  sleep(1);
   cout<<"Bird: Starting new game"<<endl;
   calculatePigPosns();
   determineCoordinators();

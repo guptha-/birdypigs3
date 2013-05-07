@@ -1,0 +1,17 @@
+pigs 6, coord alive 10, pig notify 2, max posn 5 - a 377
+pigs 6, coord alive 06, pig notify 2, max posn 5 - b 367
+pigs 6, coord alive 03, pig notify 2, max posn 5 - c 393
+pigs 6, coord alive 10, pig notify 4, max posn 5 - d 211
+pigs 6, coord alive 10, pig notify 6, max posn 5 - e 155
+pigs 6, coord alive 10, pig notify 2, max posn 8 - p 301
+pigs 6, coord alive 10, pig notify 4, max posn 8 - f 157 
+pigs 6, coord alive 10, pig notify 6, max posn 8 - g 99
+pigs 6, coord alive 10, pig notify 2, max posn 10 - q 251
+pigs 6, coord alive 10, pig notify 4, max posn 10 - h 134
+pigs 6, coord alive 10, pig notify 6, max posn 10 - i 84
+pigs 8, coord alive 10, pig notify 2, max posn 5 - j 474
+pigs 8, coord alive 10, pig notify 4, max posn 5 - k 304
+pigs 8, coord alive 10, pig notify 6, max posn 5 - l 235
+pigs 8, coord alive 10, pig notify 2, max posn 8 - m 363
+pigs 8, coord alive 10, pig notify 4, max posn 8 - n 229
+pigs 8, coord alive 10, pig notify 6, max posn 8 - o 145
